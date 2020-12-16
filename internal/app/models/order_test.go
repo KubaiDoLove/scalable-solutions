@@ -100,3 +100,84 @@ func TestNewGoodTillCancelledOrder(t *testing.T) {
 		assert.Equal(t, GoodTillCancelled, order.Type)
 	}
 }
+
+func TestOrder_IsProcessable(t *testing.T) {
+	type testCase struct {
+		order    Order
+		expected bool
+	}
+
+	notValidDate := time.Now().UTC().Add(time.Hour * -8)
+	validDate := time.Now().UTC().Add(time.Hour * 8)
+	testCases := []testCase{
+		{
+			order: Order{
+				OrderGeneralInfo: &OrderGeneralInfo{},
+			},
+			expected: false,
+		},
+		{
+			order: Order{
+				OrderGeneralInfo: &OrderGeneralInfo{
+					ValidUntil: &notValidDate,
+					IsEnabled:  true,
+				},
+			},
+			expected: false,
+		},
+		{
+			order: Order{
+				OrderGeneralInfo: &OrderGeneralInfo{
+					ValidUntil: &validDate,
+					IsEnabled:  false,
+				},
+			},
+			expected: false,
+		},
+		{
+			order: Order{
+				OrderGeneralInfo: &OrderGeneralInfo{
+					ValidUntil: &validDate,
+					IsEnabled:  true,
+				},
+			},
+			expected: true,
+		},
+	}
+
+	for _, testCase := range testCases {
+		assert.Equal(t, testCase.expected, testCase.order.IsProcessable())
+	}
+}
+
+func TestOrder_Snapshot(t *testing.T) {
+	type testCase struct {
+		order            Order
+		expectedSnapshot *OrderSnapshot
+	}
+
+	testCases := []testCase{
+		{
+			order: Order{
+				OrderGeneralInfo: &OrderGeneralInfo{},
+			},
+			expectedSnapshot: &OrderSnapshot{},
+		},
+		{
+			order: Order{
+				OrderGeneralInfo: &OrderGeneralInfo{
+					Price:    decimal.NewFromInt(2),
+					Quantity: 3,
+				},
+			},
+			expectedSnapshot: &OrderSnapshot{
+				Price:    decimal.NewFromInt(2),
+				Quantity: 3,
+			},
+		},
+	}
+
+	for _, testCase := range testCases {
+		assert.Equal(t, testCase.expectedSnapshot, testCase.order.Snapshot())
+	}
+}
