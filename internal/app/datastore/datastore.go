@@ -6,6 +6,7 @@ import (
 	"github.com/google/uuid"
 )
 
+// DataStore interface to make sure we switch between databases easily
 type DataStore interface {
 	CreateOrder(ctx context.Context, order *models.Order) error
 	DisableOrder(ctx context.Context, id uuid.UUID) error
