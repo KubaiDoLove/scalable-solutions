@@ -12,7 +12,7 @@ import (
 )
 
 func TestNew(t *testing.T) {
-	validStore := &Store{
+	validStore := &OrderBook{
 		asks: make(map[uuid.UUID]models.Order, 0),
 		bids: make(map[uuid.UUID]models.Order, 0),
 	}

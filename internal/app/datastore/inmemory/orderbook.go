@@ -11,21 +11,21 @@ import (
 )
 
 // Thread safe "in memory" store
-type Store struct {
+type OrderBook struct {
 	mu   sync.Mutex
 	asks map[uuid.UUID]models.Order
 	bids map[uuid.UUID]models.Order
 }
 
 func New() datastore.DataStore {
-	return &Store{
+	return &OrderBook{
 		asks: make(map[uuid.UUID]models.Order, 0),
 		bids: make(map[uuid.UUID]models.Order, 0),
 	}
 }
 
 // CreateOrder validates order on a very basic level and saves it
-func (s *Store) CreateOrder(ctx context.Context, order *models.Order) error {
+func (o *OrderBook) CreateOrder(ctx context.Context, order *models.Order) error {
 	if order == nil {
 		return datastore.ErrEmptyStruct
 	}
@@ -34,37 +34,37 @@ func (s *Store) CreateOrder(ctx context.Context, order *models.Order) error {
 		return datastore.ErrZeroID
 	}
 
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	o.mu.Lock()
+	defer o.mu.Unlock()
 
 	if order.Operation == models.Ask {
-		s.asks[order.ID] = *order
+		o.asks[order.ID] = *order
 		return nil
 	}
 
-	s.bids[order.ID] = *order
+	o.bids[order.ID] = *order
 	return nil
 }
 
 // DisableOrder to remove it from market snapshot and other reads
-func (s *Store) DisableOrder(ctx context.Context, id uuid.UUID) error {
+func (o *OrderBook) DisableOrder(ctx context.Context, id uuid.UUID) error {
 	if id == uuid.Nil {
 		return datastore.ErrZeroID
 	}
 
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	o.mu.Lock()
+	defer o.mu.Unlock()
 
-	if order, orderInAsks := s.asks[id]; orderInAsks {
+	if order, orderInAsks := o.asks[id]; orderInAsks {
 		if order.IsProcessable() {
-			s.asks[id].OrderGeneralInfo.IsEnabled = false
+			o.asks[id].OrderGeneralInfo.IsEnabled = false
 		}
 		return nil
 	}
 
-	if order, orderInBids := s.bids[id]; orderInBids {
+	if order, orderInBids := o.bids[id]; orderInBids {
 		if order.IsProcessable() {
-			s.bids[id].OrderGeneralInfo.IsEnabled = false
+			o.bids[id].OrderGeneralInfo.IsEnabled = false
 		}
 		return nil
 	}
@@ -73,21 +73,21 @@ func (s *Store) DisableOrder(ctx context.Context, id uuid.UUID) error {
 }
 
 // OrderByID returns only enabled and not expired order
-func (s *Store) OrderByID(ctx context.Context, id uuid.UUID) (*models.Order, error) {
+func (o *OrderBook) OrderByID(ctx context.Context, id uuid.UUID) (*models.Order, error) {
 	if id == uuid.Nil {
 		return nil, datastore.ErrZeroID
 	}
 
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	o.mu.Lock()
+	defer o.mu.Unlock()
 
-	if order, orderInAsks := s.asks[id]; orderInAsks {
+	if order, orderInAsks := o.asks[id]; orderInAsks {
 		if order.IsProcessable() {
 			return &order, nil
 		}
 	}
 
-	if order, orderInBids := s.bids[id]; orderInBids {
+	if order, orderInBids := o.bids[id]; orderInBids {
 		if order.IsProcessable() {
 			return &order, nil
 		}
@@ -97,25 +97,25 @@ func (s *Store) OrderByID(ctx context.Context, id uuid.UUID) (*models.Order, err
 }
 
 // MatchOrder to get available bids/asks for a given order
-func (s *Store) MatchOrder(ctx context.Context, order *models.Order) ([]models.Order, error) {
+func (o *OrderBook) MatchOrder(ctx context.Context, order *models.Order) ([]models.Order, error) {
 	if order == nil {
 		return nil, datastore.ErrEmptyStruct
 	}
 
 	if order.Operation == models.Bid {
-		return s.matchBid(order.Price)
+		return o.matchBid(order.Price)
 	}
 
-	return s.matchAsk(order.Price)
+	return o.matchAsk(order.Price)
 }
 
-func (s *Store) matchBid(bidPrice decimal.Decimal) ([]models.Order, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+func (o *OrderBook) matchBid(bidPrice decimal.Decimal) ([]models.Order, error) {
+	o.mu.Lock()
+	defer o.mu.Unlock()
 
 	matchingAsks := make([]models.Order, 0)
 
-	for _, ask := range s.asks {
+	for _, ask := range o.asks {
 		if ask.IsProcessable() && ask.Price.LessThanOrEqual(bidPrice) && ask.Quantity > 0 {
 			matchingAsks = append(matchingAsks, ask)
 		}
@@ -124,13 +124,13 @@ func (s *Store) matchBid(bidPrice decimal.Decimal) ([]models.Order, error) {
 	return matchingAsks, nil
 }
 
-func (s *Store) matchAsk(askPrice decimal.Decimal) ([]models.Order, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+func (o *OrderBook) matchAsk(askPrice decimal.Decimal) ([]models.Order, error) {
+	o.mu.Lock()
+	defer o.mu.Unlock()
 
 	matchingBids := make([]models.Order, 0)
 
-	for _, bid := range s.bids {
+	for _, bid := range o.bids {
 		if bid.IsProcessable() && bid.Price.GreaterThanOrEqual(askPrice) && bid.Quantity > 0 {
 			matchingBids = append(matchingBids, bid)
 		}
@@ -140,19 +140,19 @@ func (s *Store) matchAsk(askPrice decimal.Decimal) ([]models.Order, error) {
 }
 
 // MarketDataSnapshot to get actual market data ordered by price
-func (s *Store) MarketDataSnapshot(ctx context.Context) (*models.MarketDataSnapshot, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+func (o *OrderBook) MarketDataSnapshot(ctx context.Context) (*models.MarketDataSnapshot, error) {
+	o.mu.Lock()
+	defer o.mu.Unlock()
 
 	asks := make([]models.OrderSnapshot, 0)
-	for _, ask := range s.asks {
+	for _, ask := range o.asks {
 		if ask.IsProcessable() {
 			asks = append(asks, *ask.Snapshot())
 		}
 	}
 
 	bids := make([]models.OrderSnapshot, 0)
-	for _, bid := range s.bids {
+	for _, bid := range o.bids {
 		if bid.IsProcessable() {
 			bids = append(bids, *bid.Snapshot())
 		}
