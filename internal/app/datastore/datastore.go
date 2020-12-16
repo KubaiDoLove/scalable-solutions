@@ -10,6 +10,6 @@ type DataStore interface {
 	CreateOrder(ctx context.Context, order *models.Order) error
 	DisableOrder(ctx context.Context, id uuid.UUID) error
 	OrderByID(ctx context.Context, id uuid.UUID) (*models.Order, error)
-	MatchOrder(ctx context.Context, order *models.Order) []models.Order
-	MarketDataSnapshot(ctx context.Context) *models.MarketDataSnapshot
+	MatchOrder(ctx context.Context, order *models.Order) ([]models.Order, error)
+	MarketDataSnapshot(ctx context.Context) (*models.MarketDataSnapshot, error)
 }

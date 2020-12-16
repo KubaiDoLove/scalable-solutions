@@ -1,6 +1,7 @@
 package models
 
 import (
+	"github.com/google/uuid"
 	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/assert"
 	"testing"
@@ -9,20 +10,29 @@ import (
 
 func TestNewGoodTillCancelledOrder(t *testing.T) {
 	type testCase struct {
-		generalInfo   OrderGeneralInfo
+		generalInfo   *OrderGeneralInfo
 		expectedOrder *Order
 	}
 
 	testValidUntil := time.Now().UTC().Add(time.Hour * 24 * 7)
 	testCounterParty := "testCounterParty"
+	testTradeCode := uuid.New()
 
 	testCases := []testCase{
+		{},
 		{
-			generalInfo:   OrderGeneralInfo{},
-			expectedOrder: &Order{},
+			generalInfo: &OrderGeneralInfo{
+				TradeCode: testTradeCode,
+			},
+			expectedOrder: &Order{
+				OrderGeneralInfo: &OrderGeneralInfo{
+					TradeCode: testTradeCode,
+				},
+			},
 		},
 		{
-			generalInfo: OrderGeneralInfo{
+			generalInfo: &OrderGeneralInfo{
+				TradeCode:    testTradeCode,
 				ValidUntil:   &testValidUntil,
 				Price:        decimal.NewFromInt(20),
 				Quantity:     1,
@@ -30,7 +40,8 @@ func TestNewGoodTillCancelledOrder(t *testing.T) {
 				CounterParty: testCounterParty,
 			},
 			expectedOrder: &Order{
-				OrderGeneralInfo: OrderGeneralInfo{
+				OrderGeneralInfo: &OrderGeneralInfo{
+					TradeCode:    testTradeCode,
 					ValidUntil:   &testValidUntil,
 					Price:        decimal.NewFromInt(20),
 					Quantity:     1,
@@ -40,7 +51,8 @@ func TestNewGoodTillCancelledOrder(t *testing.T) {
 			},
 		},
 		{
-			generalInfo: OrderGeneralInfo{
+			generalInfo: &OrderGeneralInfo{
+				TradeCode:    testTradeCode,
 				ValidUntil:   &testValidUntil,
 				Price:        decimal.NewFromFloat32(5.5),
 				Quantity:     3,
@@ -48,7 +60,8 @@ func TestNewGoodTillCancelledOrder(t *testing.T) {
 				CounterParty: testCounterParty,
 			},
 			expectedOrder: &Order{
-				OrderGeneralInfo: OrderGeneralInfo{
+				OrderGeneralInfo: &OrderGeneralInfo{
+					TradeCode:    testTradeCode,
 					ValidUntil:   &testValidUntil,
 					Price:        decimal.NewFromFloat32(5.5),
 					Quantity:     3,
@@ -60,9 +73,15 @@ func TestNewGoodTillCancelledOrder(t *testing.T) {
 	}
 
 	for _, testCase := range testCases {
-		order := NewGoodTillCancelledOrder(testCase.generalInfo)
-		assert.NotNil(t, order)
+		order, err := NewGoodTillCancelledOrder(testCase.generalInfo)
+		if err != nil {
+			assert.EqualError(t, err, ErrNoEmptyGeneralInfo.Error())
+			continue
+		}
 
+		assert.NotNil(t, order)
+		assert.NotZero(t, order.ID)
+		assert.Equal(t, testCase.expectedOrder.TradeCode, order.TradeCode)
 		assert.NotNil(t, order.ValidUntil)
 		if testCase.generalInfo.ValidUntil == nil {
 			defaultExpireTime := time.Now().UTC().Add(time.Hour * 24 * 90)
@@ -78,8 +97,6 @@ func TestNewGoodTillCancelledOrder(t *testing.T) {
 		assert.Equal(t, testCase.expectedOrder.Operation, order.Operation)
 		assert.Equal(t, testCase.expectedOrder.CounterParty, order.CounterParty)
 		assert.True(t, order.IsEnabled)
-
-		assert.NotZero(t, order.TradeCode)
 		assert.Equal(t, GoodTillCancelled, order.Type)
 	}
 }

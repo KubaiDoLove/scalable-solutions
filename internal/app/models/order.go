@@ -1,9 +1,14 @@
 package models
 
 import (
+	"errors"
 	"github.com/google/uuid"
 	"github.com/shopspring/decimal"
 	"time"
+)
+
+var (
+	ErrNoEmptyGeneralInfo = errors.New("need general info to process further")
 )
 
 // Since we need "good-till-cancelled" order type for a task accomplishment
@@ -20,12 +25,14 @@ const (
 
 // OrderGeneralInfo consists "must have" data for any order
 type OrderGeneralInfo struct {
+	ID           uuid.UUID
+	TradeCode    uuid.UUID
 	ValidUntil   *time.Time
 	Price        decimal.Decimal
 	Quantity     uint
 	Operation    MarketOperation
 	CounterParty string
-	// We never delete orders, only turn off
+	// We never delete orders, only disable
 	IsEnabled bool
 }
 
@@ -37,9 +44,13 @@ type OrderSnapshot struct {
 
 // We also assume that there will be only sell/buy operations with securities on the market for the sake of simplicity
 type Order struct {
-	OrderGeneralInfo
-	TradeCode uuid.UUID
-	Type      TimeLimitedOrderType
+	*OrderGeneralInfo
+	Type TimeLimitedOrderType
+}
+
+func (o Order) IsProcessable() bool {
+	isNotExpired := o.ValidUntil != nil && time.Now().UTC().Before(*o.ValidUntil)
+	return o.IsEnabled && isNotExpired
 }
 
 func (o Order) Snapshot() *OrderSnapshot {
@@ -50,16 +61,20 @@ func (o Order) Snapshot() *OrderSnapshot {
 }
 
 // NewGoodTillCancelledOrder creates
-func NewGoodTillCancelledOrder(info OrderGeneralInfo) *Order {
+func NewGoodTillCancelledOrder(info *OrderGeneralInfo) (*Order, error) {
+	if info == nil {
+		return nil, ErrNoEmptyGeneralInfo
+	}
+
 	if info.ValidUntil == nil {
 		defaultExpireTime := time.Now().UTC().Add(time.Hour * 24 * 90)
 		info.ValidUntil = &defaultExpireTime
 	}
 
+	info.ID = uuid.New()
 	info.IsEnabled = true
 	return &Order{
 		OrderGeneralInfo: info,
-		TradeCode:        uuid.New(),
 		Type:             GoodTillCancelled,
-	}
+	}, nil
 }
