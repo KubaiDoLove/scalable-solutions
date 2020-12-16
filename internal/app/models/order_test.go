@@ -10,7 +10,7 @@ import (
 func TestNewGoodTillCancelledOrder(t *testing.T) {
 	type testCase struct {
 		generalInfo   OrderGeneralInfo
-		expectedOrder *TimeLimitedOrder
+		expectedOrder *Order
 	}
 
 	testValidUntil := time.Now().UTC().Add(time.Hour * 24 * 7)
@@ -19,22 +19,22 @@ func TestNewGoodTillCancelledOrder(t *testing.T) {
 	testCases := []testCase{
 		{
 			generalInfo:   OrderGeneralInfo{},
-			expectedOrder: &TimeLimitedOrder{},
+			expectedOrder: &Order{},
 		},
 		{
 			generalInfo: OrderGeneralInfo{
 				ValidUntil:   &testValidUntil,
 				Price:        decimal.NewFromInt(20),
 				Quantity:     1,
-				Operation:    Buy,
+				Operation:    Bid,
 				CounterParty: testCounterParty,
 			},
-			expectedOrder: &TimeLimitedOrder{
+			expectedOrder: &Order{
 				OrderGeneralInfo: OrderGeneralInfo{
 					ValidUntil:   &testValidUntil,
 					Price:        decimal.NewFromInt(20),
 					Quantity:     1,
-					Operation:    Buy,
+					Operation:    Bid,
 					CounterParty: testCounterParty,
 				},
 			},
@@ -44,15 +44,15 @@ func TestNewGoodTillCancelledOrder(t *testing.T) {
 				ValidUntil:   &testValidUntil,
 				Price:        decimal.NewFromFloat32(5.5),
 				Quantity:     3,
-				Operation:    Sell,
+				Operation:    Ask,
 				CounterParty: testCounterParty,
 			},
-			expectedOrder: &TimeLimitedOrder{
+			expectedOrder: &Order{
 				OrderGeneralInfo: OrderGeneralInfo{
 					ValidUntil:   &testValidUntil,
 					Price:        decimal.NewFromFloat32(5.5),
 					Quantity:     3,
-					Operation:    Sell,
+					Operation:    Ask,
 					CounterParty: testCounterParty,
 				},
 			},
@@ -77,6 +77,7 @@ func TestNewGoodTillCancelledOrder(t *testing.T) {
 		assert.Equal(t, testCase.expectedOrder.Quantity, order.Quantity)
 		assert.Equal(t, testCase.expectedOrder.Operation, order.Operation)
 		assert.Equal(t, testCase.expectedOrder.CounterParty, order.CounterParty)
+		assert.True(t, order.IsEnabled)
 
 		assert.NotZero(t, order.TradeCode)
 		assert.Equal(t, GoodTillCancelled, order.Type)
