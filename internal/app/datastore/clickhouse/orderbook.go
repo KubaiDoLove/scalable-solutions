@@ -139,80 +139,67 @@ func (o *OrderBook) MatchOrder(ctx context.Context, order *models.Order) ([]mode
 		return nil, datastore.ErrEmptyStruct
 	}
 
-	if order.Operation == models.Bid {
-		return o.matchBid(order.Price)
-	}
-
-	return o.matchAsk(order.Price)
+	return o.matchOrderByOperation(order.Operation, order.Price)
 }
 
-func (o *OrderBook) matchBid(bidPrice decimal.Decimal) ([]models.Order, error) {
-	matchingAsks := make([]models.Order, 0)
-
-	stmt, err := o.db.Preparex(`
+func (o *OrderBook) matchOrderByOperation(operation models.MarketOperation, price decimal.Decimal) ([]models.Order, error) {
+	query := `
 		SELECT *
 		FROM orders
-		WHERE operation = 'ask' AND isEnabled = 1 AND now('Europe/London') <= validUntil AND toFloat64(price) <= toFloat64(?) AND quantity > 0
-	`)
+		WHERE 
+			operation = 'ask'
+				AND isEnabled = 1
+				AND now('Europe/London') <= validUntil
+				AND toFloat64(price) <= toFloat64(?)
+				AND quantity > 0
+	`
+
+	if operation == models.Ask {
+		query = `
+			SELECT *
+			FROM orders
+			WHERE operation = 'bid'
+				AND isEnabled = 1
+				AND now('Europe/London') <= validUntil
+				AND toFloat64(price) >= toFloat64(?)
+				AND quantity > 0
+		`
+	}
+
+	matchingOrders := make([]models.Order, 0)
+
+	stmt, err := o.db.Preparex(query)
 	if err != nil {
 		return nil, err
 	}
 
-	err = stmt.Select(&matchingAsks, bidPrice.String())
+	err = stmt.Select(&matchingOrders, price.String())
 	if err != nil {
 		return nil, err
 	}
 
-	return matchingAsks, nil
-}
-
-func (o *OrderBook) matchAsk(askPrice decimal.Decimal) ([]models.Order, error) {
-	matchingBids := make([]models.Order, 0)
-
-	stmt, err := o.db.Preparex(`
-		SELECT *
-		FROM orders
-		WHERE operation = 'bid' AND isEnabled = 1 AND now('Europe/London') <= validUntil AND toFloat64(price) >= toFloat64(?) AND quantity > 0
-	`)
-	if err != nil {
-		return nil, err
-	}
-
-	err = stmt.Select(&matchingBids, askPrice.String())
-	if err != nil {
-		return nil, err
-	}
-
-	return matchingBids, nil
+	return matchingOrders, nil
 }
 
 func (o *OrderBook) MarketDataSnapshot(ctx context.Context) (*models.MarketDataSnapshot, error) {
-	asks := make([]models.OrderSnapshot, 0)
-	asksStmt, err := o.db.Preparex(`
+	stmt, err := o.db.Preparex(`
 		SELECT price, quantity
 		FROM orders
-		WHERE operation = 'ask' AND isEnabled = 1 AND now('Europe/London') <= validUntil
+		WHERE operation = ? AND isEnabled = 1 AND now('Europe/London') <= validUntil
 		ORDER BY toFloat64(price)
 	`)
 	if err != nil {
 		return nil, err
 	}
-	err = asksStmt.Select(&asks)
+
+	asks := make([]models.OrderSnapshot, 0)
+	err = stmt.Select(&asks, "ask")
 	if err != nil {
 		return nil, err
 	}
 
 	bids := make([]models.OrderSnapshot, 0)
-	bidsStmt, err := o.db.Preparex(`
-		SELECT price, quantity
-		FROM orders
-		WHERE operation = 'bid' AND isEnabled = 1 AND now('Europe/London') <= validUntil
-		ORDER BY toFloat64(price)
-	`)
-	if err != nil {
-		return nil, err
-	}
-	err = bidsStmt.Select(&bids)
+	err = stmt.Select(&bids, "bid")
 	if err != nil {
 		return nil, err
 	}
