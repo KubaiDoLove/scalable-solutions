@@ -25,27 +25,27 @@ const (
 
 // OrderGeneralInfo consists "must have" data for any order
 type OrderGeneralInfo struct {
-	ID           uuid.UUID
-	TradeCode    uuid.UUID
-	ValidUntil   *time.Time
-	Price        decimal.Decimal
-	Quantity     uint
-	Operation    MarketOperation
-	CounterParty string
+	ID           uuid.UUID       `db:"id"`
+	TradeCode    uuid.UUID       `db:"tradeCode"`
+	ValidUntil   *time.Time      `db:"validUntil"`
+	Price        decimal.Decimal `db:"price"`
+	Quantity     uint            `db:"quantity"`
+	Operation    MarketOperation `db:"operation"`
+	CounterParty string          `db:"counterParty"`
 	// We never delete orders, only disable
-	IsEnabled bool
+	IsEnabled bool `db:"isEnabled"`
 }
 
 // OrderSnapshot for market data snapshots
 type OrderSnapshot struct {
-	Price    decimal.Decimal
-	Quantity uint
+	Price    decimal.Decimal `db:"price"`
+	Quantity uint            `db:"quantity"`
 }
 
 // We also assume that there will be only sell/buy operations with securities on the market for the sake of simplicity
 type Order struct {
 	*OrderGeneralInfo
-	Type TimeLimitedOrderType
+	Type TimeLimitedOrderType `db:"type"`
 }
 
 func (o Order) IsProcessable() bool {

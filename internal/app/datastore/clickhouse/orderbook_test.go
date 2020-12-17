@@ -1,4 +1,4 @@
-package inmemory
+package clickhouse
 
 import (
 	"context"
@@ -12,16 +12,17 @@ import (
 )
 
 func TestNew(t *testing.T) {
-	validStore := &OrderBook{
-		asks: make(map[uuid.UUID]models.Order, 0),
-		bids: make(map[uuid.UUID]models.Order, 0),
+	store, err := New()
+	if err != nil {
+		t.Fatal("no db connection: ", err)
 	}
-
-	assert.Equal(t, validStore, New())
+	orderBook := store.(*OrderBook)
+	defer orderBook.Close()
 }
 
-func TestStore_CreateOrder(t *testing.T) {
-	store := New()
+func TestOrderBook_CreateOrder(t *testing.T) {
+	db, teardown := TestDB(t)
+	defer teardown()
 
 	type errTestCase struct {
 		order       *models.Order
@@ -41,7 +42,7 @@ func TestStore_CreateOrder(t *testing.T) {
 	}
 
 	for _, testCase := range errTestCases {
-		assert.Equal(t, testCase.expectedErr, store.CreateOrder(context.Background(), testCase.order))
+		assert.Equal(t, testCase.expectedErr, db.CreateOrder(context.Background(), testCase.order))
 	}
 
 	testBid, _ := models.NewGoodTillCancelledOrder(&models.OrderGeneralInfo{
@@ -52,11 +53,13 @@ func TestStore_CreateOrder(t *testing.T) {
 		CounterParty: "BidCounterParty",
 	})
 
-	err := store.CreateOrder(context.Background(), testBid)
+	err := db.CreateOrder(context.Background(), testBid)
 	assert.Nil(t, err)
 
-	bidFromStore, _ := store.OrderByID(context.Background(), testBid.ID)
-	assert.Equal(t, testBid, bidFromStore)
+	bidFromStore, err := db.OrderByID(context.Background(), testBid.ID)
+	assert.Nil(t, err)
+	assert.Equal(t, testBid.Price, bidFromStore.Price)
+	assert.Equal(t, testBid.Quantity, bidFromStore.Quantity)
 
 	testAsk, _ := models.NewGoodTillCancelledOrder(&models.OrderGeneralInfo{
 		TradeCode:    uuid.New(),
@@ -66,51 +69,20 @@ func TestStore_CreateOrder(t *testing.T) {
 		CounterParty: "AskCounterParty",
 	})
 
-	err = store.CreateOrder(context.Background(), testAsk)
+	err = db.CreateOrder(context.Background(), testAsk)
 	assert.Nil(t, err)
 
-	askFromStore, _ := store.OrderByID(context.Background(), testAsk.ID)
-	assert.Equal(t, testAsk, askFromStore)
+	askFromStore, err := db.OrderByID(context.Background(), testAsk.ID)
+	assert.Nil(t, err)
+	assert.Equal(t, testAsk.Price, askFromStore.Price)
+	assert.Equal(t, testAsk.Quantity, askFromStore.Quantity)
 }
 
-func TestStore_DisableOrder(t *testing.T) {
-	store := New()
-
-	assert.Equal(t, datastore.ErrZeroID, store.DisableOrder(context.Background(), uuid.Nil))
-
-	testBid, _ := models.NewGoodTillCancelledOrder(&models.OrderGeneralInfo{
-		TradeCode:    uuid.New(),
-		Price:        decimal.NewFromInt(32),
-		Quantity:     5,
-		Operation:    models.Bid,
-		CounterParty: "BidCounterParty",
-	})
-	_ = store.CreateOrder(context.Background(), testBid)
-
-	err := store.DisableOrder(context.Background(), testBid.ID)
-	assert.Nil(t, err)
-
-	_, err = store.OrderByID(context.Background(), testBid.ID)
-	assert.Equal(t, datastore.ErrOrderDoesNotExist, err)
-
-	testAsk, _ := models.NewGoodTillCancelledOrder(&models.OrderGeneralInfo{
-		TradeCode:    uuid.New(),
-		Price:        decimal.NewFromInt(21),
-		Quantity:     3,
-		Operation:    models.Ask,
-		CounterParty: "AskCounterParty",
-	})
-	_ = store.CreateOrder(context.Background(), testAsk)
-
-	err = store.DisableOrder(context.Background(), testAsk.ID)
-	assert.Nil(t, err)
-
-	_, err = store.OrderByID(context.Background(), testAsk.ID)
-	assert.Equal(t, datastore.ErrOrderDoesNotExist, err)
-}
+// No tests for DisableOrder since "Mutations are not supported by storage Memory"
 
 func TestStore_OrderByID(t *testing.T) {
-	store := New()
+	store, teardown := TestDB(t)
+	defer teardown()
 
 	_, err := store.OrderByID(context.Background(), uuid.Nil)
 	assert.Equal(t, datastore.ErrZeroID, err)
@@ -134,10 +106,12 @@ func TestStore_OrderByID(t *testing.T) {
 
 	bidOne, err := store.OrderByID(context.Background(), testBidOne.ID)
 	assert.Nil(t, err)
-	assert.Equal(t, testBidOne, bidOne)
+	assert.Equal(t, testBidOne.Price, bidOne.Price)
+	assert.Equal(t, testBidOne.Quantity, bidOne.Quantity)
 	bidTwo, err := store.OrderByID(context.Background(), testBidTwo.ID)
 	assert.Nil(t, err)
-	assert.Equal(t, testBidTwo, bidTwo)
+	assert.Equal(t, testBidTwo.Price, bidTwo.Price)
+	assert.Equal(t, testBidTwo.Quantity, bidTwo.Quantity)
 
 	testAskOne, _ := models.NewGoodTillCancelledOrder(&models.OrderGeneralInfo{
 		TradeCode:    uuid.New(),
@@ -158,15 +132,18 @@ func TestStore_OrderByID(t *testing.T) {
 
 	askOne, err := store.OrderByID(context.Background(), testAskOne.ID)
 	assert.Nil(t, err)
-	assert.Equal(t, testAskOne, askOne)
+	assert.Equal(t, testAskOne.Price, askOne.Price)
+	assert.Equal(t, testAskOne.Quantity, askOne.Quantity)
 	askTwo, err := store.OrderByID(context.Background(), testAskTwo.ID)
 	assert.Nil(t, err)
-	assert.Equal(t, testAskTwo, askTwo)
+	assert.Equal(t, testAskTwo.Price, askTwo.Price)
+	assert.Equal(t, testAskTwo.Quantity, askTwo.Quantity)
 }
 
 // We automatically test matchBid and matchAsk functions when we test MatchOrder
 func TestStore_MatchOrder(t *testing.T) {
-	store := New()
+	store, teardown := TestDB(t)
+	defer teardown()
 
 	_, err := store.MatchOrder(context.Background(), nil)
 	assert.Equal(t, datastore.ErrEmptyStruct, err)
@@ -272,7 +249,8 @@ func TestStore_MatchOrder(t *testing.T) {
 }
 
 func TestStore_MarketDataSnapshot(t *testing.T) {
-	store := New()
+	store, teardown := TestDB(t)
+	defer teardown()
 	notValidDate := time.Now().UTC().Add(time.Hour * -8)
 
 	validAskOne, _ := models.NewGoodTillCancelledOrder(&models.OrderGeneralInfo{
