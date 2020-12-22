@@ -10,4 +10,4 @@
 с данными, реализовано 2 имплементации данного интерфейса:
 
 - Thread safe "in memory" OrderBook
-- Clickhouse OrderBook (подсмотрел ваш стэк)
+- Clickhouse OrderBook
